@@ -37,13 +37,35 @@ class NXOS_vm(vrnetlab.VM):
         for e in os.listdir("/"):
             if re.search(".qcow2$", e):
                 disk_image = "/" + e
+                filename, ext = os.path.splitext(disk_image)
+                overlay_disk_image = f"{filename}-overlay{ext}"
         ram = 8192
         super(NXOS_vm, self).__init__(username, password, disk_image=disk_image, ram=ram)
-        self.num_nics = 20
-        self.credentials = [
-                ['admin', 'admin']
-            ]
+        self.num_nics = 64 # N9k available images are from 9364 & 9500 (chassis) so 64 should be the least common denominator.
+        self.credentials = [["admin", "admin"]]
         self.qemu_args.extend(["-pflash", "/usr/share/edk2.git/ovmf-x64/OVMF-pure-efi.fd"])
+        # We swap out -display none for -nographic, because we still want the serial console
+        self.qemu_args.remove("-display")
+        self.qemu_args.remove("none")
+        # We remove the -drive declaration, because we manually specify its format later on
+        self.qemu_args.remove("-drive")
+        self.qemu_args = [x for x in self.qemu_args if "if=ide,file=" not in x]
+
+        self.qemu_args.extend([
+            "-nographic",
+            # Host CPU mode and providing 2 cores makes for considerably better performance
+            "-cpu",
+            "host",
+            "-smp",
+            "cpus=2",
+            # Manually declare all the drives and such that we need.
+            "-device",
+            "ahci,id=ahci0,bus=pci.0",
+            "-device",
+            "ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=drive-sata-disk0,bootindex=1",
+            "-drive",
+            "file=%s,if=none,id=drive-sata-disk0,index=0,media=disk,format=qcow2" % overlay_disk_image,
+        ])
 
 
     def bootstrap_spin(self):
@@ -56,9 +78,13 @@ class NXOS_vm(vrnetlab.VM):
             self.start()
             return
 
-        (ridx, match, res) = self.tn.expect([b"login:"], 1)
-        if match: # got a match!
-            if ridx == 0: # login
+        (ridx, match, res) = self.tn.expect(
+            [b"Abort Power On Auto Provisioning [yes - continue with normal setup, skip - bypass password and basic configuration, no - continue with Power On Auto Provisioning] (yes/skip/no)[no]:", b"login:"], 1
+        )
+        if match:  # got a match!
+            if ridx == 0:
+                self.wait_write("skip", wait=None)
+            elif ridx == 1:
                 self.logger.debug("matched login prompt")
                 try:
                     username, password = self.credentials.pop(0)
