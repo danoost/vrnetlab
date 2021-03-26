@@ -37,11 +37,13 @@ class NXOS_vm(vrnetlab.VM):
         for e in os.listdir("/"):
             if re.search(".qcow2$", e):
                 disk_image = "/" + e
-        super(NXOS_vm, self).__init__(username, password, disk_image=disk_image)
-        self.num_nics = 144
+        ram = 8192
+        super(NXOS_vm, self).__init__(username, password, disk_image=disk_image, ram=ram)
+        self.num_nics = 20
         self.credentials = [
                 ['admin', 'admin']
             ]
+        self.qemu_args.extend(["-pflash", "/usr/share/edk2.git/ovmf-x64/OVMF-pure-efi.fd"])
 
 
     def bootstrap_spin(self):
@@ -115,8 +117,8 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--trace', action='store_true', help='enable trace level logging')
-    parser.add_argument('--username', default='vrnetlab', help='Username')
-    parser.add_argument('--password', default='VR-netlab9', help='Password')
+    parser.add_argument('--username', default='admin', help='Username')
+    parser.add_argument('--password', default='admin', help='Password')
     args = parser.parse_args()
 
     LOG_FORMAT = "%(asctime)s: %(module)-10s %(levelname)-8s %(message)s"
